@@ -2,6 +2,9 @@
   "name": "deal-ai",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -39,7 +42,6 @@
     "arctic": "^1.9.2",
     "aws-sdk": "^2.1687.0",
     "axios": "^1.7.5",
-    "canvas": "^2.11.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "1.0.0",
