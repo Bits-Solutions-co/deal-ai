@@ -21,13 +21,30 @@ model User {
   email    String  @unique
   image    String?
   password String? // creadentials
-  googleId String? @unique @map("google-id") // google auth 
+  googleId String? @unique @map("google-id") // google auth
 
   createdAt DateTime @default(now())
 
   projects Project[]
+  usages   PlatformUsage[]
 
   @@map("users")
+}
+
+model PlatformUsage {
+  id       String   @id @map("_id")
+  userId   String   @map("user-id")
+  platform PLATFORM
+  period   String // "YYYY-MM" UTC
+  count    Int      @default(0)
+  costUSD  Float    @default(0) @map("cost-usd")
+
+  updatedAt DateTime @default(now()) @updatedAt @map("updated-at")
+
+  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
+
+  @@unique([userId, platform, period])
+  @@map("platform-usage")
 }
 
 model Session {
