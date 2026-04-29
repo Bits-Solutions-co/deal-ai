@@ -273,6 +273,52 @@ export const PostForm = {
       />
     );
   },
+  platforms: function Component({
+    dic: {
+      "post-form": { platform: c },
+    },
+    loading,
+    form,
+  }: PostFormProps) {
+    const lang = useLocale();
+    return (
+      <FormField
+        control={form.control}
+        name="platforms"
+        render={({ field }) => {
+          const selected: string[] = Array.isArray(field.value)
+            ? field.value
+            : [];
+          const toggle = (value: string) => {
+            if (selected.includes(value))
+              field.onChange(selected.filter((v) => v !== value));
+            else field.onChange([...selected, value]);
+          };
+          return (
+            <FormItem>
+              <FormLabel>{c?.["label"]}</FormLabel>
+              <div className="flex flex-wrap gap-3">
+                {platforms(lang)?.map((p) => (
+                  <label
+                    key={p.value}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 hover:bg-gray-50"
+                  >
+                    <Checkbox
+                      checked={selected.includes(p.value)}
+                      onCheckedChange={() => toggle(p.value)}
+                      disabled={loading}
+                    />
+                    <span>{p.label}</span>
+                  </label>
+                ))}
+              </div>
+              <FormMessage />
+            </FormItem>
+          );
+        }}
+      />
+    );
+  },
   postAt: ({
     dic: {
       "post-form": { postAt: c },

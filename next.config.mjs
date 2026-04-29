@@ -21,6 +21,18 @@ const nextConfig = {
       },
       {
         protocol: "https",
+        hostname: "cognerax-learn.sfo3.digitaloceanspaces.com",
+      },
+      {
+        protocol: "https",
+        hostname: "sfo3.digitaloceanspaces.com",
+      },
+      {
+        protocol: "https",
+        hostname: "cognerax-learn.sfo3.cdn.digitaloceanspaces.com",
+      },
+      {
+        protocol: "https",
         hostname: "ideogram.ai",
       },
       { protocol: "https", hostname: "images.unsplash.com" },

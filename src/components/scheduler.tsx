@@ -63,7 +63,7 @@ export function Scheduler({
 
   function publish() {
     console.log("attempting to publish");
-    const domain = process.env.NEXT_PUBLIC_AI_API;
+    const domain = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
     posts.forEach(async (post) => {
       console.log("in the posts array");
       let currentDate = new Date();

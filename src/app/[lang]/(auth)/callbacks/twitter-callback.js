@@ -10,7 +10,7 @@ export default function TwitterCallback() {
 
       if (code && state) {
         try {
-          const domain = process.env.NEXT_PUBLIC_AI_API;
+          const domain = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
           const response = await fetch(
             `${domain}/twitter-callback?code=${code}&state=${state}`,
             {

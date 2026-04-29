@@ -25,12 +25,18 @@ export const postSchema = z.object(
   },
 );
 
-export const postCreateSchema = postSchema.pick({
-  caseStudyId: true,
-  noOfWeeks: true,
-  campaignType: true,
-  contentLength: true,
-});
+export const postCreateSchema = postSchema
+  .pick({
+    caseStudyId: true,
+    noOfWeeks: true,
+    campaignType: true,
+    contentLength: true,
+  })
+  .extend({
+    platforms: z
+      .array(z.enum(platformsArr))
+      .min(1, "Select at least one platform."),
+  });
 
 export const postUpdateSchema = postSchema
   .pick({

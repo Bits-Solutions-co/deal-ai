@@ -10,6 +10,7 @@ import axios from "@/lib/axios";
 import { isAxiosError } from "axios";
 import { clientHttpRequest } from "@/lib/utils";
 import { Dictionary } from "@/types/locale";
+import { platformsArr } from "@/db/enums";
 import { postCreateSchema } from "@/validations/posts";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Platform, Project, StudyCase } from "@prisma/client";
@@ -43,7 +44,12 @@ export function PostCreateButton({
 
   const form = useForm<z.infer<typeof postCreateSchema>>({
     resolver: zodResolver(postCreateSchema),
-    defaultValues: { caseStudyId: caseStudy?.["id"] },
+    defaultValues: {
+      caseStudyId: caseStudy?.["id"],
+      platforms: project?.platforms?.length
+        ? project.platforms.map((p) => p.value)
+        : [...platformsArr],
+    },
   });
 
   let firstSuccess = false; // Flag to track the first successful post
@@ -237,6 +243,11 @@ export function PostCreateButton({
                 loading={loading}
               />
               <PostForm.contentLength
+                dic={dic}
+                form={form as any}
+                loading={loading}
+              />
+              <PostForm.platforms
                 dic={dic}
                 form={form as any}
                 loading={loading}

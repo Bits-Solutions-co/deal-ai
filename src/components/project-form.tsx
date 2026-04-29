@@ -161,7 +161,7 @@ export const ProjectForm = {
 if(!base64Arr?.['length']) throw new Error("no images")
 
         const pdfImages: string[] = await axios({ user, locale })
-          .post("/api/images", {base64Arr}  )
+          .post("/api/images", base64Arr)
           .then((r) => r?.["data"])
           .catch((err) => {
             console.error(
@@ -542,7 +542,7 @@ if(!pdfImages?.['length']) throw new Error("no images")
           let receiveMessage: (event: MessageEvent) => void;
           try {
             const platform = form.getValues(`platforms.${i}`);
-            const domain = process.env.NEXT_PUBLIC_AI_API;
+            const domain = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
 
             let authWindow: Window | null = null;
 
