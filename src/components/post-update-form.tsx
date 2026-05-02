@@ -29,7 +29,7 @@ import { useSession } from "./session-provider";
 export type PostUpdateFormProps = {
   post: Post & {
     image: ImageType | null;
-    caseStudy: StudyCase & { project: Project };
+    caseStudy: (StudyCase & { project: Project }) | null;
   };
   disabled?: boolean;
 } & Dictionary["post-update-form"] &
@@ -55,7 +55,11 @@ export function PostUpdateForm({
     mode: "onSubmit",
     resolver: zodResolver(postUpdateSchema),
     defaultValues: {
-      ...post,
+      id: post.id,
+      title: post.title,
+      content: post.content ?? "",
+      platform: post.platform,
+      postAt: post.postAt ?? new Date(),
       confirm: !!post?.["confirmedAt"],
     },
   });

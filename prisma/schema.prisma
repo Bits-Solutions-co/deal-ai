@@ -1,8 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema — Allrounder v1 (Phase 1).
+// Strategy: keep legacy models (Project / Property / StudyCase / legacy Post / legacy Image)
+// alongside the new Allrounder core (Workspace / Campaign / Strategy / Document / ...).
+// The backfill script (scripts/backfill-workspaces.ts) walks legacy rows and creates
+// new-shape records. Old models stay readable for ~30 days, then drop.
 
 datasource db {
   provider = "mongodb"
@@ -13,38 +13,32 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ============================================================================
+// USERS / SESSIONS / WORKSPACES
+// ============================================================================
+
 model User {
-  id       String    @id @map("_id")
-  sessions Session[]
+  id String @id @map("_id")
 
-  name     String
-  email    String  @unique
-  image    String?
-  password String? // creadentials
-  googleId String? @unique @map("google-id") // google auth
+  name             String
+  email            String  @unique
+  image            String?
+  password         String?
+  googleId         String? @unique @map("google-id")
+  stripeCustomerId String? @unique @map("stripe-customer-id")
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime? @map("deleted-at")
 
-  projects Project[]
-  usages   PlatformUsage[]
+  sessions        Session[]
+  memberships     Member[]
+  // Legacy direct ownership — preserved for migration
+  projects        Project[]
+  usages          PlatformUsage[]
+  ownedWorkspaces Workspace[]     @relation("WorkspaceOwner")
+  documents       Document[]      @relation("DocumentUploader")
 
   @@map("users")
-}
-
-model PlatformUsage {
-  id       String   @id @map("_id")
-  userId   String   @map("user-id")
-  platform PLATFORM
-  period   String // "YYYY-MM" UTC
-  count    Int      @default(0)
-  costUSD  Float    @default(0) @map("cost-usd")
-
-  updatedAt DateTime @default(now()) @updatedAt @map("updated-at")
-
-  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
-
-  @@unique([userId, platform, period])
-  @@map("platform-usage")
 }
 
 model Session {
@@ -54,8 +48,614 @@ model Session {
 
   user User @relation(references: [id], fields: [userId], onDelete: Cascade)
 
+  @@index([userId])
   @@map("sessions")
 }
+
+model Workspace {
+  id            String         @id @map("_id")
+  slug          String         @unique
+  name          String
+  ownerId       String         @map("owner-id")
+  verticalPacks VerticalPack[] @default([])
+  region        Region         @default(GLOBAL)
+  plan          PlanTier       @default(FREE)
+  locale        String         @default("en")
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  owner            User               @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members          Member[]
+  brandProfile     BrandProfile?
+  documents        Document[]
+  campaigns        Campaign[]
+  strategies       Strategy[]
+  posts            Post[]
+  assets           Asset[]
+  oauthStates      OAuthState[]
+  platforms        Platform[]
+  subscription     Subscription?
+  analyticsData    AnalyticsData[]
+  audienceInsights AudienceInsights[]
+  postComments     PostComment[]
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+model Member {
+  id          String     @id @map("_id")
+  workspaceId String     @map("workspace-id")
+  userId      String     @map("user-id")
+  role        MemberRole @default(EDITOR)
+  invitedAt   DateTime   @default(now()) @map("invited-at")
+  acceptedAt  DateTime?  @map("accepted-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("members")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  EDITOR
+  APPROVER
+  VIEWER
+}
+
+enum VerticalPack {
+  REAL_ESTATE
+  ECOMMERCE
+  F_AND_B
+  RETAIL
+  HOSPITALITY
+  HEALTHCARE
+}
+
+enum Region {
+  GLOBAL
+  KSA
+  UAE
+  EU
+  US
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+// ============================================================================
+// BRAND
+// ============================================================================
+
+model BrandProfile {
+  id          String @id @map("_id")
+  workspaceId String @unique @map("workspace-id")
+
+  brandName        String
+  logoUrl          String?  @map("logo-url")
+  colors           Json?
+  fonts            Json?
+  toneVoice        String?  @map("tone-voice")
+  toneSamples      String[] @default([]) @map("tone-samples")
+  bannedWords      String[] @default([]) @map("banned-words")
+  industry         String?
+  targetAudience   String?  @map("target-audience")
+  brandValues      String[] @default([]) @map("brand-values")
+  positioning      String?
+  competitors      String[] @default([])
+  doRules          String[] @default([]) @map("do-rules")
+  dontRules        String[] @default([]) @map("dont-rules")
+  styleDescription String?  @map("style-description")
+  strictAdherence  Boolean  @default(false) @map("strict-adherence")
+  voiceEmbedding   Float[]  @default([]) @map("voice-embedding")
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("brand-profiles")
+}
+
+// ============================================================================
+// DOCUMENTS / RAG
+// ============================================================================
+
+enum DocumentType {
+  PDF
+  EXCEL
+  CSV
+  DOCX
+  PPT
+  IMAGE
+  VIDEO
+  URL
+  RAW_TEXT
+}
+
+enum DocumentStatus {
+  QUEUED
+  PARSING
+  EMBEDDING
+  READY
+  FAILED
+}
+
+enum ChunkType {
+  TEXT
+  TABLE
+  IMAGE_CAPTION
+  HEADING
+  LIST
+}
+
+model Document {
+  id          String @id @map("_id")
+  workspaceId String @map("workspace-id")
+  uploaderId  String @map("uploader-id")
+
+  title      String
+  fileType   DocumentType   @map("file-type")
+  s3Key      String         @map("s3-key")
+  sizeBytes  Int            @map("size-bytes")
+  pageCount  Int?           @map("page-count")
+  mimeType   String?        @map("mime-type")
+  status     DocumentStatus @default(QUEUED)
+  parserUsed String?        @map("parser-used")
+  errorMsg   String?        @map("error-msg")
+
+  extractedJson        Json?   @map("extracted-json")
+  extractionConfidence Float?  @map("extraction-confidence")
+  summary              String?
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploader  User            @relation("DocumentUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
+  chunks    DocumentChunk[]
+
+  @@index([workspaceId, status])
+  @@index([uploaderId])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id          String @id @map("_id")
+  documentId  String @map("document-id")
+  workspaceId String @map("workspace-id")
+
+  chunkIndex  Int       @map("chunk-index")
+  pageNumber  Int?      @map("page-number")
+  contentText String    @map("content-text")
+  contentType ChunkType @default(TEXT) @map("content-type")
+  embedding   Float[]   @default([])
+  figureUrl   String?   @map("figure-url")
+  weight      Float     @default(1.0)
+
+  createdAt DateTime @default(now()) @map("created-at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, chunkIndex])
+  @@index([workspaceId])
+  @@map("document-chunks")
+}
+
+// ============================================================================
+// CAMPAIGNS / STRATEGIES / POSTS / ASSETS
+// ============================================================================
+
+enum CampaignGoal {
+  AWARENESS
+  ENGAGEMENT
+  CONVERSION
+  SALES
+  LEADS
+  LAUNCH
+  RETENTION
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum ContentStyle {
+  BOLD
+  CORPORATE
+  FUNNY
+  LUXURY
+  GEN_Z
+  MINIMAL
+}
+
+model Campaign {
+  id             String  @id @map("_id")
+  workspaceId    String  @map("workspace-id")
+  brandProfileId String? @map("brand-profile-id")
+  templateSlug   String? @map("template-slug")
+
+  name        String
+  description String?
+  goal        CampaignGoal
+  status      CampaignStatus @default(DRAFT)
+
+  startDate     DateTime      @map("start-date")
+  endDate       DateTime      @map("end-date")
+  durationWeeks Int           @default(4) @map("duration-weeks")
+  postFrequency Int           @default(5) @map("post-frequency")
+  platforms     PLATFORM[]
+  contentStyle  ContentStyle? @map("content-style")
+  tonalGuide    Json?         @map("tonal-guide")
+
+  // RAG sources
+  sourceDocs String[] @default([]) @map("source-docs")
+
+  // Brief input snapshot
+  briefInput Json? @map("brief-input")
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  strategy  Strategy?
+  posts     Post[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, startDate])
+  @@map("campaigns")
+}
+
+model Strategy {
+  id          String @id @map("_id")
+  campaignId  String @unique @map("campaign-id")
+  workspaceId String @map("workspace-id")
+
+  audience       Json?
+  pillars        Json?
+  swot           Json?
+  cadenceJson    Json? @map("cadence-json")
+  tableRows      Json? @map("table-rows")
+  kpiTargets     Json? @map("kpi-targets")
+  suggestions    Json?
+  preview        Json?
+  globalControls Json? @map("global-controls")
+
+  modelUsed        String?   @map("model-used")
+  promptTokens     Int?      @map("prompt-tokens")
+  completionTokens Int?      @map("completion-tokens")
+  generatedAt      DateTime  @default(now()) @map("generated-at")
+  approvedAt       DateTime? @map("approved-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("strategies")
+}
+
+enum PostStatus {
+  // Legacy values kept for migration
+  PENDING
+  CONFIRMED
+  PUBLISHED
+  SUSPENDED
+  // New Allrounder values
+  DRAFT
+  NEEDS_APPROVAL
+  APPROVED
+  REJECTED
+  SCHEDULED
+  FAILED
+  CANCELED
+}
+
+enum ContentType {
+  TEXT
+  IMAGE
+  CAROUSEL
+  VIDEO_REEL
+  STORY
+  THREAD
+}
+
+enum POST_CAMPAIGN {
+  BRANDING_AWARENESS
+  ENGAGEMENT
+  SALES_CONVERSION
+}
+
+enum POST_CONTENT_LENGTH {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+model Post {
+  id             String  @id @map("_id")
+  // workspaceId is OPTIONAL during migration; required for all new posts.
+  // Backfill populates this for legacy posts via Project -> Workspace mapping.
+  workspaceId    String? @map("workspace-id")
+  campaignId     String? @map("campaign-id")
+  brandProfileId String? @map("brand-profile-id")
+
+  // Legacy linkage
+  caseStudyId    String? @map("case-study-id")
+  imageId        String? @map("image-id")
+  framedImageURL String? @map("framed-image")
+
+  // Allrounder fields
+  title          String
+  caption        String?
+  hashtags       String[]    @default([])
+  mediaIds       String[]    @default([]) @map("media-ids")
+  contentType    ContentType @default(TEXT) @map("content-type")
+  textOnVisual   Json?       @map("text-on-visual")
+  sourceChunkIds String[]    @default([]) @map("source-chunk-ids")
+
+  // Legacy: kept for back-compat
+  noOfWeeks     String?              @map("no-of-weeks")
+  content       String?
+  contentLength POST_CONTENT_LENGTH? @map("content-length")
+  campaignType  POST_CAMPAIGN?       @map("campaign-type")
+
+  status       PostStatus @default(DRAFT)
+  platform     PLATFORM
+  scheduledFor DateTime?  @map("scheduled-for")
+  publishedAt  DateTime?  @map("published-at")
+  externalId   String?    @map("external-id")
+
+  // Approval trail
+  approvedBy     String?   @map("approved-by")
+  approvedAt     DateTime? @map("approved-at")
+  rejectedReason String?   @map("rejected-reason")
+
+  // Failure / retry
+  failureReason String? @map("failure-reason")
+  retryCount    Int     @default(0) @map("retry-count")
+
+  // Generation provenance
+  generationId String? @map("generation-id")
+  modelUsed    String? @map("model-used")
+  cacheHit     Boolean @default(false) @map("cache-hit")
+  tokensUsed   Int?    @map("tokens-used")
+
+  // Legacy timestamps
+  postAt      DateTime? @map("post-at")
+  confirmedAt DateTime? @map("confirmed-at")
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  workspace Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign  Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  caseStudy StudyCase?    @relation(fields: [caseStudyId], references: [id], onDelete: Cascade)
+  image     Image?        @relation(fields: [imageId], references: [id], onDelete: NoAction)
+  versions  PostVersion[]
+  comments  PostComment[]
+
+  @@index([workspaceId, scheduledFor, status])
+  @@index([workspaceId, platform])
+  @@index([campaignId])
+  @@index([caseStudyId])
+  @@map("posts")
+}
+
+model PostVersion {
+  id        String   @id @map("_id")
+  postId    String   @map("post-id")
+  version   Int
+  snapshot  Json
+  authorId  String   @map("author-id")
+  createdAt DateTime @default(now()) @map("created-at")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, version])
+  @@index([postId])
+  @@map("post-versions")
+}
+
+model PostComment {
+  id          String    @id @map("_id")
+  postId      String    @map("post-id")
+  workspaceId String    @map("workspace-id")
+  authorId    String    @map("author-id")
+  body        String
+  createdAt   DateTime  @default(now()) @map("created-at")
+  deletedAt   DateTime? @map("deleted-at")
+
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([workspaceId])
+  @@map("post-comments")
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+  LOGO
+  TEMPLATE
+  FRAME
+  AUDIO
+}
+
+enum AssetOrigin {
+  UPLOADED
+  AI_GENERATED
+  EDITED
+  TEMPLATE
+}
+
+model Asset {
+  id            String      @id @map("_id")
+  workspaceId   String      @map("workspace-id")
+  type          AssetType
+  s3Key         String      @map("s3-key")
+  thumbnailKey  String?     @map("thumbnail-key")
+  width         Int?
+  height        Int?
+  durationSec   Float?      @map("duration-sec")
+  origin        AssetOrigin @default(UPLOADED)
+  prompt        String?
+  modelUsed     String?     @map("model-used")
+  parentAssetId String?     @map("parent-asset-id")
+  tags          String[]    @default([])
+  brandSafe     Boolean     @default(true) @map("brand-safe")
+  embedding     Float[]     @default([])
+
+  createdAt DateTime  @default(now()) @map("created-at")
+  deletedAt DateTime? @map("deleted-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, type])
+  @@map("assets")
+}
+
+// ============================================================================
+// TEMPLATES / Brief Input templates
+// ============================================================================
+
+model Template {
+  id           String        @id @map("_id")
+  slug         String        @unique
+  name         String
+  description  String
+  useCase      String        @map("use-case")
+  fields       Json
+  promptKey    String        @map("prompt-key")
+  verticalPack VerticalPack?
+  isSystem     Boolean       @default(true) @map("is-system")
+  fieldCount   Int           @default(0) @map("field-count")
+
+  createdAt DateTime @default(now()) @map("created-at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated-at")
+
+  @@map("templates")
+}
+
+// ============================================================================
+// ANALYTICS / AUDIENCE INSIGHTS
+// ============================================================================
+
+model AnalyticsData {
+  id          String   @id @map("_id")
+  workspaceId String   @map("workspace-id")
+  postId      String?  @map("post-id")
+  platform    PLATFORM
+  metricsAt   DateTime @map("metrics-at")
+
+  reach       Int @default(0)
+  impressions Int @default(0)
+  engagement  Int @default(0)
+  clicks      Int @default(0)
+  shares      Int @default(0)
+  comments    Int @default(0)
+  saves       Int @default(0)
+  conversions Int @default(0)
+
+  rawJson Json? @map("raw-json")
+
+  createdAt DateTime @default(now()) @map("created-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, platform, metricsAt])
+  @@index([postId])
+  @@map("analytics-data")
+}
+
+model AudienceInsights {
+  id          String   @id @map("_id")
+  workspaceId String   @map("workspace-id")
+  platform    PLATFORM
+  computedAt  DateTime @map("computed-at")
+
+  ageBuckets    Json
+  genderSplit   Json @map("gender-split")
+  topGeos       Json @map("top-geos")
+  topInterests  Json @map("top-interests")
+  bestPostHours Json @map("best-post-hours")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, platform])
+  @@map("audience-insights")
+}
+
+// ============================================================================
+// OAUTH STATE / SUBSCRIPTION
+// ============================================================================
+
+model OAuthState {
+  id           String   @id @map("_id")
+  workspaceId  String?  @map("workspace-id")
+  provider     String
+  state        String   @unique
+  codeVerifier String?  @map("code-verifier")
+  redirectUrl  String?  @map("redirect-url")
+  expiresAt    DateTime @map("expires-at")
+  createdAt    DateTime @default(now()) @map("created-at")
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("oauth-states")
+}
+
+model Subscription {
+  id          String @id @map("_id")
+  workspaceId String @unique @map("workspace-id")
+
+  stripeSubscriptionId String?   @unique @map("stripe-subscription-id")
+  stripePriceId        String?   @map("stripe-price-id")
+  plan                 PlanTier  @default(FREE)
+  status               String    @default("active")
+  currentPeriodStart   DateTime? @map("current-period-start")
+  currentPeriodEnd     DateTime? @map("current-period-end")
+  cancelAtPeriodEnd    Boolean   @default(false) @map("cancel-at-period-end")
+
+  // Quotas
+  postsQuotaMonthly Int @default(50) @map("posts-quota-monthly")
+  workspacesQuota   Int @default(1) @map("workspaces-quota")
+  usersQuota        Int @default(1) @map("users-quota")
+  aiTokensMonthly   Int @default(100000) @map("ai-tokens-monthly")
+
+  // Counters (reset monthly via cron)
+  postsUsedThisPeriod    Int @default(0) @map("posts-used-this-period")
+  aiTokensUsedThisPeriod Int @default(0) @map("ai-tokens-used-this-period")
+
+  createdAt DateTime @default(now()) @map("created-at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated-at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ============================================================================
+// PLATFORM CONNECTIONS / USAGE
+// ============================================================================
 
 enum PLATFORM {
   FACEBOOK
@@ -65,22 +665,69 @@ enum PLATFORM {
 }
 
 model Platform {
-  id        String @id @map("_id")
-  projectId String @map("project-id")
+  id          String  @id @map("_id")
+  // workspaceId is the new tenant scope. projectId stays for legacy reads.
+  workspaceId String? @map("workspace-id")
+  projectId   String? @map("project-id")
 
-  value        PLATFORM
-  clientId     String?
-  refreshToken String?
-  urn          String?
+  value             PLATFORM
+  clientId          String?
+  refreshToken      String?
+  urn               String?
+  externalAccountId String?   @map("external-account-id")
+  scopes            String[]  @default([])
+  expiresAt         DateTime? @map("expires-at")
 
-  project Project @relation(references: [id], fields: [projectId], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created-at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated-at")
+  deletedAt DateTime? @map("deleted-at")
 
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, value])
+  @@index([projectId])
   @@map("platforms")
 }
 
-model Project {
+model PlatformUsage {
   id          String   @id @map("_id")
   userId      String   @map("user-id")
+  workspaceId String?  @map("workspace-id")
+  platform    PLATFORM
+  period      String
+  count       Int      @default(0)
+  costUSD     Float    @default(0) @map("cost-usd")
+
+  // AI usage breakdown
+  promptTokens     Int @default(0) @map("prompt-tokens")
+  completionTokens Int @default(0) @map("completion-tokens")
+  cacheHits        Int @default(0) @map("cache-hits")
+
+  updatedAt DateTime @default(now()) @updatedAt @map("updated-at")
+
+  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
+
+  @@unique([userId, platform, period])
+  @@index([workspaceId, period])
+  @@map("platform-usage")
+}
+
+// ============================================================================
+// LEGACY MODELS (kept for backfill; will be deprecated after migration)
+// ============================================================================
+
+enum PROPERTY_TYPE {
+  APARTMENT
+  VILLA
+}
+
+model Project {
+  id          String  @id @map("_id")
+  userId      String  @map("user-id")
+  workspaceId String? @map("workspace-id")
+  // ^ populated by backfill; new code reads via Workspace.
+
   title       String
   logo        String?
   pdf         String[] @default([])
@@ -96,20 +743,24 @@ model Project {
 
   propertyTypes PROPERTY_TYPE[] @map("property-types")
   platforms     Platform[]
+  properties    Property[]
+  caseStudy     StudyCase[]
 
-  properties Property[]
-  caseStudy  StudyCase[]
-  user       User        @relation(references: [id], fields: [userId], onDelete: Cascade)
+  user User @relation(references: [id], fields: [userId], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([workspaceId])
   @@map("projects")
 }
 
 model StudyCase {
-  id        String    @id @map("_id")
-  projectId String    @map("project-id")
-  title     String
-  refImages String[]  @map("ref-images")
-  deletedAt DateTime? @map("deleted-at")
+  id          String    @id @map("_id")
+  projectId   String    @map("project-id")
+  workspaceId String?   @map("workspace-id")
+  campaignId  String?   @map("campaign-id")
+  title       String
+  refImages   String[]  @map("ref-images")
+  deletedAt   DateTime? @map("deleted-at")
 
   content             String
   targetAudience      String  @map("target-audience")
@@ -128,18 +779,16 @@ model StudyCase {
   posts   Post[]
   project Project @relation(references: [id], fields: [projectId], onDelete: Cascade)
 
+  @@index([projectId])
+  @@index([workspaceId])
   @@map("case-studies")
 }
 
-enum PROPERTY_TYPE {
-  APARTMENT
-  VILLA
-}
-
 model Property {
-  id        String @id @map("_id")
-  projectId String @map("project-id")
-  title     String
+  id          String  @id @map("_id")
+  projectId   String  @map("project-id")
+  workspaceId String? @map("workspace-id")
+  title       String
 
   type        PROPERTY_TYPE
   units       String
@@ -158,62 +807,21 @@ model Property {
 
   project Project @relation(references: [id], fields: [projectId], onDelete: Cascade)
 
+  @@index([projectId])
+  @@index([workspaceId])
   @@map("properties")
 }
 
-enum POST_CAMPAIGN {
-  BRANDING_AWARENESS
-  ENGAGEMENT
-  SALES_CONVERSION
-}
-
-enum POST_CONTENT_LENGTH {
-  SHORT
-  MEDIUM
-  LONG
-}
-
-enum POST_STATUS {
-  PENDING
-  CONFIRMED
-  PUBLISHED
-  SUSPENDED // not published, got an erorr at that time
-}
-
 model Image {
-  id     String @id @map("_id")
-  src    String
-  prompt String
+  id          String  @id @map("_id")
+  src         String
+  prompt      String
+  workspaceId String? @map("workspace-id")
 
   deletedAt DateTime? @map("deleted-at")
 
   posts Post[]
 
+  @@index([workspaceId])
   @@map("images")
-}
-
-model Post {
-  id             String  @id @map("_id")
-  caseStudyId    String  @map("case-study-id")
-  imageId        String? @map("image-id")
-  framedImageURL String? @map("framed-image")
-
-  title     String
-  noOfWeeks String @map("no-of-weeks")
-  content   String
-
-  status        POST_STATUS         @default(PENDING)
-  platform      PLATFORM
-  contentLength POST_CONTENT_LENGTH @map("content-length")
-  campaignType  POST_CAMPAIGN       @map("campaign-type")
-
-  createdAt   DateTime  @default(now()) @map("created-at")
-  postAt      DateTime  @map("post-at")
-  confirmedAt DateTime? @map("confirmed-at")
-  deletedAt   DateTime? @map("deleted-at")
-
-  image     Image?    @relation(fields: [imageId], references: [id], onDelete: NoAction)
-  caseStudy StudyCase @relation(references: [id], fields: [caseStudyId], onDelete: Cascade)
-
-  @@map("posts")
 }

@@ -22,7 +22,7 @@ import {
   PostRestoreButtonProps,
 } from "./post-restore-button";
 
-type ColumnType = Post & { caseStudy: StudyCase };
+type ColumnType = Post & { caseStudy: StudyCase | null };
 
 type BinPostsTableProps = {
   data: ColumnType[];

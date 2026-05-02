@@ -66,6 +66,7 @@ export function DashboardPostsBarChart({
   const chartData = posts.reduce(
     (acc, post) => {
       const platform = post.platform;
+      if (!post.postAt) return acc;
       const postAtDate = new Date(post.postAt).toISOString().split("T")[0]; // Get the postAt date
 
       // Find existing date entry or create a new one
@@ -245,6 +246,7 @@ export function DashboardPostsBarChart({
             .filter(
               (p) =>
                 p?.["platform"] === activeChart &&
+                p?.["postAt"] &&
                 p?.["postAt"].toLocaleDateString() ==
                   new Date(choosenDate ?? "").toLocaleDateString(),
             )

@@ -36,7 +36,7 @@ import * as z from "zod";
 export type ImageEditorProps = {
   image: ImageType & {
     post: Post & {
-      caseStudy: StudyCase & { project: Project };
+      caseStudy: (StudyCase & { project: Project }) | null;
     };
   };
   disabled?: boolean;

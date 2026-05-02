@@ -23,7 +23,7 @@ import { Link } from "./link";
 export type SchedulerProps = {
   posts: (Post & {
     image: ImageType | null;
-    caseStudy: StudyCase & { project: Project & { platforms: Platform[] } };
+    caseStudy: (StudyCase & { project: Project & { platforms: Platform[] } }) | null;
   })[];
 } & Dictionary["scheduler"] &
   Dictionary["post-update-form"] &
@@ -77,7 +77,7 @@ export function Scheduler({
         const targetedPlatform = platforms.find((e) => e.value === "LINKEDIN");
         console.log("targetedPlatform: ", targetedPlatform);
 
-        if (post.postAt < currentDate) {
+        if (post.postAt && post.postAt < currentDate) {
           const data = {
             text: post.content,
             access_token: targetedPlatform?.clientId,
@@ -110,7 +110,7 @@ export function Scheduler({
         const targetedPlatform = platforms.find((e) => e.value === "TWITTER");
         console.log(platforms);
 
-        if (post.postAt < currentDate) {
+        if (post.postAt && post.postAt < currentDate) {
           const data = {
             text: post.content,
             access_token: targetedPlatform?.clientId,
@@ -175,7 +175,7 @@ export function Month({
   month: dayjs.Dayjs[][];
   posts: (Post & {
     image: ImageType | null;
-    caseStudy: StudyCase & { project: Project };
+    caseStudy: (StudyCase & { project: Project }) | null;
   })[];
 } & Dictionary["post-update-form"] &
   Dictionary["image-form"] &
@@ -208,7 +208,7 @@ export function Day({
   rowIdx: number;
   posts: (Post & {
     image: ImageType | null;
-    caseStudy: StudyCase & { project: Project };
+    caseStudy: (StudyCase & { project: Project }) | null;
   })[];
 } & Dictionary["post-update-form"] &
   Dictionary["image-form"] &
